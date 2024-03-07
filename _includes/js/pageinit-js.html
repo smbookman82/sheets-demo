@@ -1,0 +1,186 @@
+<script src="{{ '/assets/lib/papaparse.min.js' | relative_url }}"></script>
+<script>
+
+/* set up the pageInit function that will run all item features and feature includes */ 
+function pageInit(items) {
+    // check for include functions on page
+    if(includeFunctions) { 
+        // iterate over functions and init
+        for (var i = 0; i < includeFunctions.length; ++i) {
+            try { 
+                includeFunctions[i](items);
+            } catch (error) {
+                console.log("Issue with include function: " + includeFunctions[i].name); 
+                console.error(error);
+            }
+        }
+    }
+}
+
+
+
+
+/* function to retrieve metadata, parse, add to sessionStorage, and init page */ 
+function cbGetMetadata(metadata_url) {
+    /* use papaparse to get metadata from configured CSV URL, then init page */
+    Papa.parse(metadata_url, {
+        download: true,
+        header: true,
+        complete: (results) => { 
+            cb_items = results.data.filter(item => item["objectid"]);
+            sessionStorage.setItem("cb_items_store", JSON.stringify(cb_items));
+            pageInit(cb_items);
+        },
+        error: (err) => {
+            alert("There is an error parsing your CSV! Please check the configured URL or file. The most common issue is incorrect filename, path, or URL so that your CSV is not found.");
+        }
+    });
+}
+
+/* set base variables */
+var cb_items = [];
+var config_metadata = "{{ site.metadata-csv | relative_url }}";
+
+/* set up the metadata */
+
+if (sessionStorage.getItem("cb_items_store")) {
+    // if items are already in sessionStorage init page
+    cb_items = JSON.parse(sessionStorage.getItem("cb_items_store"));
+    pageInit(cb_items);
+} else if (sessionStorage.getItem("cb_metadata_set") && sessionStorage.getItem("cb_metadata_set").includes("https://")) {
+    // if temporary metadata is set
+    cbGetMetadata(sessionStorage.getItem("cb_metadata_set"));
+} else if (config_metadata != "") { 
+    // if metadata is configured but not yet loaded
+    cbGetMetadata(config_metadata);
+} else {
+    // if no CSV is configured, add a warning alert
+    var metadataAlert = document.createElement("div");
+    metadataAlert.classList.add("container");
+    metadataAlert.innerHTML = `<div class="alert alert-warning mt-3 text-center h3" role="alert">
+        This site has no metadata set in "_config.yml"<br> please <a href="{{ '/setup/' | relative_url }}" class="alert-link">visit the setup page</a> to configure!
+    </div>`;
+    document.querySelector("main").prepend(metadataAlert);
+}
+
+{% if site.development-refresh == true %}
+if (sessionStorage.getItem("cb_metadata_set")) { 
+    var refreshButton = document.createElement("div");
+    refreshButton.classList.add("dev-buttons");
+    refreshButton.innerHTML = `<div class="btn-group-vertical">
+        ${ sessionStorage.getItem("cb_metadata_set").includes("https://") ? '<button class="btn btn-sm btn-info" onclick="refreshMetadata()" id="refreshButton">Refresh Metadata</button>' : '' }
+        <a class="btn btn-sm btn-warning" href="{{ '/setup/' | relative_url }}">Change Metadata</a>
+        <button class="btn btn-sm btn-secondary" onclick="resetMetadata()" id="refreshButton">Reset</button>
+        </div>`;
+    document.body.appendChild(refreshButton);
+    function refreshMetadata () {
+        // remove data
+        sessionStorage.removeItem("cb_items_store");
+        // reload
+        location.reload();
+    }
+    function resetMetadata () {
+        // remove data
+        sessionStorage.removeItem("cb_items_store");
+        sessionStorage.removeItem("cb_metadata_set");
+        // reload
+        location.reload();
+    }
+}
+{%- endif -%}
+    
+
+function generateElement(dataSrc,dataCaption,dataAlt,dataWidth) {
+ // Find the corresponding item in the cb_items session store array
+ const selectedItem = cb_items.find((item) => item.objectid === dataSrc);
+
+ if (!selectedItem) {
+   return null; // Data source not found in the array
+ }
+
+ // Generate the appropriate HTML element based on the file extension
+ const fileExtension = selectedItem.filename.split('.').pop();
+ let element;
+ let testpiece = "/";
+ if (selectedItem.filename.includes(testpiece)){
+    var file = selectedItem.filename;
+ }else {
+    var file = "{{ '/objects/' | relative_url }}" + selectedItem.filename;
+ }
+ const relativeURL = `{{ '/item.html' | relative_url | append: '?id=' }}${selectedItem.objectid}`;
+
+
+        if (dataAlt) {
+            var alt = dataAlt;
+        } else{
+            var alt = selectedItem.title;
+        }
+        if (dataCaption) {
+            var caption = dataCaption;
+        } else{
+            var caption = selectedItem.title;
+        }
+        if (dataWidth) {
+            var width = dataWidth;
+        } else{
+            var width = "100";
+        }
+ 
+ const captionLink = `<a href="${relativeURL}" class="text-dark">${caption}</a>`;
+ 
+ switch (fileExtension.toLowerCase()) {
+   case 'jpg':
+   case 'jpeg':
+   case 'png':
+     element = `<div class="text-center"><figure class="figure mx-3 feature-w-${width}"><a href="${relativeURL}"><img class="img-fluid" src="${file}" alt="${alt}"></a><figcaption class="figure-caption text-center">${captionLink}</figurecaption></figure></div>`;
+     break;
+   case 'pdf':
+     element = `<div class="text-center"><figure class="figure border rounded p-1 feature-w-${width}"><div class="ratio ratio-1x1"><object aria-label="pdf embed of ${caption}" data="${file}" type="application/pdf">
+                <p>The PDF is not rendering in your browser. Please use the link below to download the PDF.</p></object></div>
+                <figcaption class="figure-caption text-center">${captionLink}</figcaption></figure>`;
+     break;
+   case 'mp3':
+     element = `<figure class="text-center my-3"><audio controls class="w-${width}"><source src="${file}" type="audio/mpeg"></audio><p><figcaption class="figure-caption text-center">${captionLink}</figcaption></figure>`;
+     break;
+   case 'mp4':
+   case 'webm':
+     element = `<figure class="text-center my-3"><video controls width="${width}%"><source src="${file}" type="video/mp4"></video><figcaption class="figure-caption text-center">${captionLink}</figcaption></figure>`;
+     break;
+   default:
+     element = 'Unsupported file type';
+ }
+
+ // Generate the link to the relative URL
+ 
+
+ // Wrap the element with the caption link
+ const finalElement = `${element}`;
+
+ return finalElement;
+}
+
+// Get all elements with class "include_command" and a data-src attribute
+const elements = document.querySelectorAll('.include_command[data-src]');
+
+// Iterate through the selected elements and generate content for each one
+elements.forEach((element) => {
+ const dataSrc = element.getAttribute('data-src');
+ const dataCaption = element.getAttribute('data-caption');
+ const dataAlt = element.getAttribute('data-alt');
+ const dataWidth = element.getAttribute('data-width');
+ const generatedElement = generateElement(dataSrc,dataCaption,dataAlt);
+
+ if (generatedElement) {
+   // Create a container for the generated element
+   const container = document.createElement('div');
+   container.className = 'col-md'; // You can style this class as needed
+
+   // Insert the generated HTML element into the container
+   container.innerHTML = generatedElement;
+
+   // Replace the original element with the container
+   element.parentNode.replaceChild(container, element);
+ }
+});
+</script>
+    
